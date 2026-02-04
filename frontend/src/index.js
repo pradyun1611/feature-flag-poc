@@ -1,17 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import './index.css';
 import App from './App';
-import reportWebVitals from './reportWebVitals';
+import ProviderChooser from './ui/ProviderChooser';
+import { PROVIDER_STORAGE_KEY, DEFAULT_PROVIDER } from './providers/registry';
+import './index.css';
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+function Root() {
+  const [choice, setChoice] = useState(
+    localStorage.getItem(PROVIDER_STORAGE_KEY)
+  );
 
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
-reportWebVitals();
+  if (!choice) {
+    return (
+      <ProviderChooser
+        onChosen={(id) => {
+          localStorage.setItem(PROVIDER_STORAGE_KEY, id);
+          setChoice(id);
+        }}
+      />
+    );
+  }
+  // Once choice is set, <App /> will initialize OpenFeature using that provider
+  return <App />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
