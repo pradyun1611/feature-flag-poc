@@ -15,7 +15,7 @@ export const PROVIDERS = {
   },
   flagsmith: {
     id: 'flagsmith',
-    label: 'Flagsmith (bootstrap/offline)',
+    label: 'Flagsmith (Hosted API)',
     init: initFlagsmith,
   },
 };

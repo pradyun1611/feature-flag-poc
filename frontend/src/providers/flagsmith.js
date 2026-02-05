@@ -1,64 +1,82 @@
 // src/providers/flagsmith.js
-import { OpenFeature } from '@openfeature/web-sdk';
+import { OpenFeature, ProviderEvents } from '@openfeature/web-sdk';
 import flagsmith from 'flagsmith';
 
 /**
- * OpenFeature Provider wrapper for Flagsmith supporting:
- * - Offline local evaluation with segments/rules via /flagsmith/environment.json
- * - Fallback to static bootstrap via /flagsmith/bootstrap.json
- * - Context (userId) propagation via identify + trait, so rules like { property: "userId" } match locally
+ * OpenFeature Provider wrapper for Flagsmith using the hosted (or self-hosted) API.
+ * - Remote evaluation via Flagsmith API (Cloud default, override `api` for self-hosted).
+ * - Identity-based targeting: we call `identify(identity)` and set a `userId` trait
+ *   so segments/rules referencing "userId" match correctly.
+ * - Optional realtime updates: set REACT_APP_FLAGSMITH_REALTIME=true
+ * - Emits OpenFeature `ConfigurationChanged` when flags change.
  */
 class FlagsmithOFProvider {
   metadata = { name: 'flagsmith' };
 
   constructor(options) {
     this.options = options || {};
-    this._hasEnvDoc = !!this.options.environment;
+    this._handlers = new Map();
+    this.events = {
+      addHandler: (eventType, handler) => {
+        const arr = this._handlers.get(eventType) ?? [];
+        arr.push(handler);
+        this._handlers.set(eventType, arr);
+        return { remove: () => this.events.removeHandler(eventType, handler) };
+      },
+      removeHandler: (eventType, handler) => {
+        const arr = this._handlers.get(eventType) ?? [];
+        this._handlers.set(eventType, arr.filter((h) => h !== handler));
+      },
+    };
+  }
+
+  _emit(eventType, payload) {
+    const arr = this._handlers.get(eventType) ?? [];
+    for (const h of arr) {
+      try { h(payload); } catch { /* ignore */ }
+    }
   }
 
   async initialize(context) {
     const identity = context?.userId || 'anonymous';
 
     const initOpts = {
-      environmentID: this.options.environmentID || 'local-offline',
+      environmentID: this.options.environmentID, // required
+      // Default API is Flagsmith Cloud edge if not provided
+      ...(this.options.api ? { api: this.options.api } : {}),
       identity,
       cacheFlags: true,
       enableAnalytics: false,
-      // Prevent any network calls for offline demos
-      fetch: undefined,
+      // Realtime is optional (SSE); enable via env var if desired
+      ...(this.options.realtime ? { realtime: true } : {}),
+      onChange: () => {
+        // any server-pushed or local change
+        this._emit(ProviderEvents.ConfigurationChanged, {});
+      },
     };
-
-    // Prefer full local evaluation if an environment document is available
-    if (this.options.environment) {
-      initOpts.evaluateFlagsLocally = true;
-      initOpts.environment = this.options.environment;
-    } else if (this.options.bootstrap) {
-      // Otherwise, preload static values
-      initOpts.bootstrap = this.options.bootstrap;
-    }
 
     await flagsmith.init(initOpts);
 
-    // Ensure rules that check `property: "userId"` can match locally by setting a trait.
-    // (Identity alone is separate from traits in Flagsmith.)
+    // Keep trait aligned so rules that reference "userId" match
     try {
       await flagsmith.setTrait('userId', identity);
     } catch {
-      // no-op offline
+      // ignore
     }
+
+    // signal ready (OpenFeature also emits Ready on setProviderAndWait)
+    this._emit(ProviderEvents.Ready, {});
   }
 
   async onContextChange(_oldCtx, newCtx) {
     const identity = newCtx?.userId || 'anonymous';
-    // Re-identify to re-evaluate flags for this user
     await flagsmith.identify(identity);
-
-    // Keep the trait in sync as well (needed for segment/rule evaluation on property "userId")
     try {
       await flagsmith.setTrait('userId', identity);
     } catch {
-      // no-op offline
+      // ignore
     }
+    this._emit(ProviderEvents.ConfigurationChanged, {});
   }
 
   async shutdown() {
@@ -114,34 +132,21 @@ class FlagsmithOFProvider {
 // -------- Public initializer used by your app --------
 
 export async function initFlagsmith() {
-  // Try to load full environment (segments + rules) for offline targeting parity with flagd
-  let environment = null;
-  let bootstrap = null;
-
-  try {
-    const resEnv = await fetch('/flagsmith/environment.json', { cache: 'no-store' });
-    if (resEnv.ok) {
-      environment = await resEnv.json();
-    }
-  } catch {
-    // ignore, fall back to bootstrap
+  const environmentID = process.env.REACT_APP_FLAGSMITH_ENV_ID;
+  if (!environmentID) {
+    throw new Error(
+      'Flagsmith: REACT_APP_FLAGSMITH_ENV_ID is missing. Set it in .env.local'
+    );
   }
 
-  if (!environment) {
-    try {
-      const resBoot = await fetch('/flagsmith/bootstrap.json', { cache: 'no-store' });
-      if (resBoot.ok) {
-        bootstrap = await resBoot.json();
-      }
-    } catch {
-      // ignore, provider will just rely on OpenFeature defaults
-    }
-  }
+  const api = process.env.REACT_APP_FLAGSMITH_API || undefined;
+  const realtimeEnv = process.env.REACT_APP_FLAGSMITH_REALTIME || '';
+  const realtime = /^true$/i.test(realtimeEnv);
 
   const provider = new FlagsmithOFProvider({
-    environmentID: 'local-offline',
-    environment, // preferred (supports user targeting offline)
-    bootstrap,   // fallback (static defaults only)
+    environmentID,
+    api,       // optional (self-hosted)
+    realtime,  // optional
   });
 
   await OpenFeature.setProviderAndWait(provider);

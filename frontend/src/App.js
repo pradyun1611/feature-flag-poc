@@ -32,7 +32,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const client = await initOpenFeature(); // <-- now picks the chosen provider
+      const client = await initOpenFeature(); // <-- picks the chosen provider
       setOfClient(client);
 
       await OpenFeature.setContext({ userId: 'anonymous' });

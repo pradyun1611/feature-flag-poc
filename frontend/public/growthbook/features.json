@@ -6,7 +6,7 @@
     ]
   },
   "cta-color": {
-    "defaultValue": "green"
+    "defaultValue": "blue"
   },
   "api-new-endpoint-enabled": {
     "defaultValue": false,

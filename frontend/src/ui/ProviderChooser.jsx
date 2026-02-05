@@ -22,7 +22,6 @@ export default function ProviderChooser({ onChosen }) {
         <h2 style={{ marginTop: 0 }}>Choose a Feature Flag Provider</h2>
         <p style={{ color: '#555', marginTop: 8 }}>
           The app UI is identical; only the OpenFeature <em>provider</em> changes.
-          All options here work in offline/demo mode.
         </p>
 
         <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
@@ -48,7 +47,7 @@ export default function ProviderChooser({ onChosen }) {
                 <div style={{ color: '#666', fontSize: 13 }}>
                   {p.id === 'flagd' && 'Reads flags from your local flagd daemon (JSON).'}
                   {p.id === 'growthbook' && 'Evaluates flags locally from /growthbook/features.json.'}
-                  {p.id === 'flagsmith' && 'Uses a local bootstrap snapshot for offline usage.'}
+                  {p.id === 'flagsmith' && 'Evaluates via Flagsmith Hosted API using your Environment ID.'}
                 </div>
               </div>
             </label>
